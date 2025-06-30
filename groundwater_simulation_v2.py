@@ -10,7 +10,8 @@ from scipy.interpolate import RegularGridInterpolator
 import math
 import io
 import streamlit as st
-from datetime import time
+from datetime import time as datetime_time  # เปลี่ยนชื่อเพื่อไม่ให้ซ้ำกับ time.time()
+import time  # สำหรับฟังก์ชัน time.time()
 import os
 import requests
 from io import BytesIO
@@ -56,7 +57,6 @@ def install_thai_font():
             mpl.rcParams['font.family'] = selected_font
             mpl.rcParams['font.size'] = 10
             st.session_state['thai_font'] = selected_font
-            st.info(f"ใช้ฟอนต์ภาษาไทย: {selected_font}")
             return
         
         st.warning("ไม่พบฟอนต์ภาษาไทยที่ติดตั้งไว้ กำลังดาวน์โหลดฟอนต์ TH Sarabun New...")
@@ -92,10 +92,6 @@ def install_thai_font():
         mpl.rcParams['font.family'] = 'Tahoma'
         mpl.rcParams['font.size'] = 10
         st.session_state['thai_font'] = 'Tahoma'
-
-# เรียกใช้ฟังก์ชันติดตั้งฟอนต์
-if 'thai_font' not in st.session_state:
-    install_thai_font()
 
 # ตั้งค่าพารามิเตอร์พื้นฐาน
 BUFFER = 200
@@ -703,6 +699,10 @@ def main():
     และการซ้อนทับ (superposition) สำหรับบ่อสูบน้ำหลายบ่อ
     """)
     
+    # เรียกใช้ฟังก์ชันติดตั้งฟอนต์
+    if 'thai_font' not in st.session_state:
+        install_thai_font()
+    
     # แสดงข้อมูลฟอนต์ที่ใช้งาน
     thai_font = st.session_state.get('thai_font', 'Tahoma')
     st.sidebar.markdown(f"**ฟอนต์ที่ใช้งาน:** {thai_font}")
@@ -711,7 +711,7 @@ def main():
     if st.sidebar.checkbox("แสดงฟอนต์ทั้งหมดที่ติดตั้ง"):
         font_names = sorted(set([f.name for f in fm.fontManager.ttflist]))
         st.sidebar.write(f"พบฟอนต์ทั้งหมด: {len(font_names)} ชนิด")
-        st.sidebar.write(font_names)
+        st.sidebar.write(font_names[:20])  # แสดงเฉพาะ 20 ฟอนต์แรก
     
     # ทดสอบแสดงข้อความภาษาไทย
     if st.sidebar.checkbox("ทดสอบแสดงภาษาไทย"):
@@ -887,14 +887,14 @@ def main():
                             st.session_state.pumping_controls[well_id] = {
                                 'active': True,
                                 'morning_active': True,
-                                'morning_start': time(8, 0),
-                                'morning_end': time(12, 0),
+                                'morning_start': datetime_time(8, 0),
+                                'morning_end': datetime_time(12, 0),
                                 'afternoon_active': True,
-                                'afternoon_start': time(12, 0),
-                                'afternoon_end': time(18, 0),
+                                'afternoon_start': datetime_time(12, 0),
+                                'afternoon_end': datetime_time(18, 0),
                                 'evening_active': True,
-                                'evening_start': time(18, 0),
-                                'evening_end': time(23, 59),
+                                'evening_start': datetime_time(18, 0),
+                                'evening_end': datetime_time(23, 59),
                             }
                         
                         controls = st.session_state.pumping_controls[well_id]
@@ -996,7 +996,9 @@ def main():
         
         # สร้างแผนที่
         with st.spinner('กำลังคำนวณและสร้างแผนที่...'):
+            # วัดเวลาเริ่มต้น
             start_time = time.time()
+            
             fig = create_hourly_plot(
                 hour,
                 st.session_state.wells,
@@ -1008,6 +1010,8 @@ def main():
                 pumping_schedules
             )
             st.pyplot(fig)
+            
+            # คำนวณเวลาที่ใช้
             elapsed = time.time() - start_time
             st.success(f"คำนวณเสร็จสิ้นใน {elapsed:.2f} วินาที")
             
