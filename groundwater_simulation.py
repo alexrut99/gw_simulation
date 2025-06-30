@@ -13,8 +13,8 @@ import streamlit as st
 from datetime import time
 
 # ตั้งค่าฟอนต์
-plt.rcParams['font.family'] = 'Tahoma'
-plt.rcParams['font.size'] = 10
+# plt.rcParams['font.family'] = 'Tahoma'
+# plt.rcParams['font.size'] = 10
 
 # ตั้งค่าพารามิเตอร์พื้นฐาน
 BUFFER = 200
