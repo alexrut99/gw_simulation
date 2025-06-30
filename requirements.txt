@@ -6,3 +6,4 @@ contextily
 matplotlib-scalebar
 streamlit
 openpyxl
+requests
