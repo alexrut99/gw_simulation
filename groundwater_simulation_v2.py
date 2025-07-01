@@ -10,102 +10,15 @@ from scipy.interpolate import RegularGridInterpolator
 import math
 import io
 import streamlit as st
-from datetime import time as datetime_time
-import time
-import os
-import requests
-from io import BytesIO
-import matplotlib as mpl
-import matplotlib.font_manager as fm
-import base64
-import logging
-from datetime import datetime
-import tempfile
-from matplotlib.font_manager import FontProperties
+from datetime import time
 
-# ตั้งค่าฟอนต์ภาษาไทย
-def install_thai_font():
-    """ติดตั้งฟอนต์ภาษาไทยสำหรับ Matplotlib"""
-    try:
-        # ตรวจสอบว่าฟอนต์ถูกติดตั้งแล้วหรือยัง
-        font_names = [f.name for f in fm.fontManager.ttflist]
-        
-        # รายการฟอนต์ภาษาไทยที่รองรับ
-        thai_fonts = [
-            'TH Sarabun New',
-            'TH Niramit AS',
-            'TH Krub',
-            'TH K2D July8',
-            'TH KoHo',
-            'TH Srisakdi',
-            'Tahoma',
-            'Garuda',
-            'Umpush',
-            'Loma',
-            'Norasi',
-            'Sawasdee',
-            'Waree',
-            'Angsana New',
-            'Cordia New',
-            'Browallia New'
-        ]
-        
-        # ตรวจสอบว่ามีฟอนต์ภาษาไทยใดติดตั้งแล้วบ้าง
-        installed_thai_fonts = [f for f in thai_fonts if f in font_names]
-        
-        if installed_thai_fonts:
-            # ใช้ฟอนต์ภาษาไทยตัวแรกที่พบ
-            selected_font = installed_thai_fonts[0]
-            mpl.rcParams['font.family'] = selected_font
-            mpl.rcParams['font.size'] = 10
-            st.session_state['thai_font'] = selected_font
-            st.info(f"ใช้ฟอนต์ภาษาไทย: {selected_font}")
-            return selected_font
-        
-        st.warning("ไม่พบฟอนต์ภาษาไทยที่ติดตั้งไว้ กำลังดาวน์โหลดฟอนต์ TH Sarabun New...")
-        
-        # URL ของฟอนต์ TH Sarabun New
-        font_url = "https://github.com/google/fonts/raw/main/ofl/sarabun/THSarabunNew.ttf"
-        
-        # ดาวน์โหลดฟอนต์
-        response = requests.get(font_url)
-        if response.status_code != 200:
-            st.error("ไม่สามารถดาวน์โหลดฟอนต์ได้")
-            raise Exception(f"HTTP error: {response.status_code}")
-            
-        # สร้างไดเรกทอรีชั่วคราว
-        os.makedirs("temp_fonts", exist_ok=True)
-        font_path = os.path.join("temp_fonts", "THSarabunNew.ttf")
-        
-        with open(font_path, "wb") as f:
-            f.write(response.content)
-        
-        # เพิ่มฟอนต์ให้กับ matplotlib
-        fm.fontManager.addfont(font_path)
-        
-        # ตั้งค่าฟอนต์เริ่มต้น
-        mpl.rcParams['font.family'] = 'TH Sarabun New'
-        mpl.rcParams['font.size'] = 10
-        st.session_state['thai_font'] = 'TH Sarabun New'
-        st.session_state['thai_font_path'] = font_path
-        
-        # อัปเดตแคชฟอนต์
-        mpl.font_manager._rebuild()
-        
-        st.success("ติดตั้งฟอนต์ TH Sarabun New เรียบร้อยแล้ว")
-        return 'TH Sarabun New'
-        
-    except Exception as e:
-        st.error(f"เกิดข้อผิดพลาดในการติดตั้งฟอนต์: {str(e)}")
-        # ใช้ฟอนต์สำรอง
-        mpl.rcParams['font.family'] = 'Tahoma'
-        mpl.rcParams['font.size'] = 10
-        st.session_state['thai_font'] = 'Tahoma'
-        return 'Tahoma'
+# ตั้งค่าฟอนต์
+plt.rcParams['font.family'] = 'Tahoma'
+plt.rcParams['font.size'] = 10
 
 # ตั้งค่าพารามิเตอร์พื้นฐาน
 BUFFER = 200
-DAYS_TO_SIMULATE = 7
+DAYS_TO_SIMULATE = 7  # จำลอง 7 วัน
 MAX_HOURS = 24 * DAYS_TO_SIMULATE
 
 # UTM Zone dictionary
@@ -120,9 +33,11 @@ utm_zone_dict = {
 def read_well_data(file_content, file_type):
     """อ่านข้อมูลบ่อน้ำจาก Excel หรือ CSV"""
     try:
+        # ตรวจสอบประเภทไฟล์
         if file_type == 'excel':
             df = pd.read_excel(io.BytesIO(file_content))
-        else:
+        else:  # CSV
+            # ลองอ่านด้วย encoding มาตรฐานหลายรูปแบบ
             encodings = ['utf-8', 'tis-620', 'cp874', 'latin1']
             for encoding in encodings:
                 try:
@@ -134,19 +49,34 @@ def read_well_data(file_content, file_type):
                 st.error("ไม่สามารถอ่านไฟล์ CSV ได้ โปรดตรวจสอบ encoding")
                 return []
         
+        # แปลงชื่อคอลัมน์เป็นรูปแบบมาตรฐาน
         column_mapping = {
-            'well_id': 'Well_ID', 'wellid': 'Well_ID', 'id': 'Well_ID',
-            'easting': 'Easting', 'east': 'Easting', 'x': 'Easting',
-            'northing': 'Northing', 'north': 'Northing', 'y': 'Northing',
-            'q': 'Q', 'discharge': 'Q', 'pumping_rate': 'Q',
-            't': 'T', 'transmissivity': 'T',
-            's': 'S', 'storativity': 'S', 'storage': 'S',
-            'status': 'Status', 'type': 'Status'
+            'well_id': 'Well_ID',
+            'wellid': 'Well_ID',
+            'id': 'Well_ID',
+            'easting': 'Easting',
+            'east': 'Easting',
+            'x': 'Easting',
+            'northing': 'Northing',
+            'north': 'Northing',
+            'y': 'Northing',
+            'q': 'Q',
+            'discharge': 'Q',
+            'pumping_rate': 'Q',
+            't': 'T',
+            'transmissivity': 'T',
+            's': 'S',
+            'storativity': 'S',
+            'storage': 'S',
+            'status': 'Status',
+            'type': 'Status'
         }
         
+        # ปรับชื่อคอลัมน์
         df.columns = df.columns.str.strip().str.lower()
         df = df.rename(columns=lambda x: column_mapping.get(x, x))
         
+        # ตรวจสอบคอลัมน์ที่จำเป็น
         required_columns = ['Well_ID', 'Easting', 'Northing', 'Q', 'T', 'S', 'Status']
         missing_columns = [col for col in required_columns if col not in df.columns]
         
@@ -157,25 +87,32 @@ def read_well_data(file_content, file_type):
             st.error(df.columns.tolist())
             return []
         
+        # ตรวจสอบและแปลงประเภทข้อมูล
         df['Well_ID'] = df['Well_ID'].astype(str).str.strip()
         
         numeric_cols = ['Easting', 'Northing', 'Q', 'T', 'S']
         for col in numeric_cols:
             df[col] = pd.to_numeric(df[col], errors='coerce')
+            # เติมค่าที่ขาดหายไปด้วยค่าเฉลี่ย
             if df[col].isnull().any():
                 mean_val = df[col].mean()
                 df[col] = df[col].fillna(mean_val)
                 st.warning(f"เติมค่าขาดหายในคอลัมน์ {col} ด้วยค่าเฉลี่ย: {mean_val:.4f}")
         
+        # แปลงสถานะเป็นรูปแบบมาตรฐาน
         status_mapping = {
-            'pump': 'Pumping', 'pumping': 'Pumping',
-            'obs': 'Observation', 'observation': 'Observation',
-            'ob': 'Observation', 'monitor': 'Observation'
+            'pump': 'Pumping',
+            'pumping': 'Pumping',
+            'obs': 'Observation',
+            'observation': 'Observation',
+            'ob': 'Observation',
+            'monitor': 'Observation'
         }
         
         df['Status'] = df['Status'].astype(str).str.strip().str.lower()
         df['Status'] = df['Status'].map(status_mapping).fillna('Observation')
         
+        # ตรวจสอบค่าที่ไม่ถูกต้อง
         invalid_wells = []
         for idx, row in df.iterrows():
             issues = []
@@ -195,6 +132,7 @@ def read_well_data(file_content, file_type):
                 st.write(f"  - {issue}")
             st.warning("โปรดตรวจสอบและแก้ไขข้อมูล")
         
+        # สร้างรายการบ่อน้ำ
         wells = [
             (row['Well_ID'], row['Easting'], row['Northing'], 
              max(row['Q'], 0), max(row['T'], 1e-10), max(row['S'], 1e-10), row['Status'])
@@ -212,7 +150,9 @@ def read_well_data(file_content, file_type):
         return []
 
 def create_grid(wells, num_points=100):
+    """สร้างกริดคำนวณ"""
     if len(wells) == 0:
+        # สร้างกริดเริ่มต้นหากไม่มีข้อมูล
         x = np.linspace(0, 1000, num_points)
         y = np.linspace(0, 1000, num_points)
         return np.meshgrid(x, y)
@@ -228,72 +168,91 @@ def create_grid(wells, num_points=100):
     return np.meshgrid(x, y)
 
 def calculate_drawdown_at_time(X, Y, wells, t_hours, well_pumping_schedules, utm_epsg):
+    """
+    คำนวณระยะน้ำลดที่เวลาเฉพาะ (ชั่วโมง)
+    โดยใช้หลักการ superposition ในเวลา
+    well_pumping_schedules: dictionary ที่เก็บตารางเวลาการสูบน้ำสำหรับแต่ละบ่อ {well_id: [(start, end), ...]}
+    """
     if t_hours <= 0 or len(wells) == 0:
         return np.zeros_like(X)
     
     total_drawdown = np.zeros_like(X)
+    
+    # คำนวณจำนวนวันที่ต้องพิจารณา
     n_days = int(np.ceil(t_hours / 24))
     
     for well in wells:
         well_id, x_well, y_well, Q, T, S, status = well
+        
+        # ตรวจสอบค่าพารามิเตอร์และสถานะ
         if status != 'Pumping' or Q == 0 or T <= 0 or S <= 0:
             continue
             
+        # ดึงตารางเวลาการสูบน้ำสำหรับบ่อนี้
         pumping_schedule = well_pumping_schedules.get(well_id, [])
         if not pumping_schedule:
             continue
             
         r = np.sqrt((X - x_well)**2 + (Y - y_well)**2)
-        r = np.maximum(r, 1e-10)
+        r = np.maximum(r, 1e-10)  # หลีกเลี่ยงการหารด้วยศูนย์
         
         well_drawdown = np.zeros_like(X)
         
+        # พิจารณาการสูบน้ำในแต่ละวัน
         for day in range(n_days):
+            # เพิ่มผลการสูบน้ำจากทุกช่วงเวลาที่กำหนด
             for start_hour, end_hour in pumping_schedule:
+                # คำนวณเวลาเริ่มต้นและสิ้นสุดการสูบน้ำในวันนั้น
                 t_start = day * 24 + start_hour
                 t_end = day * 24 + end_hour
                 
+                # คำนวณ tau สำหรับทุกจุดในกริด
                 tau_start = np.maximum(t_hours - t_start, 0)
                 tau_end = np.maximum(t_hours - t_end, 0)
                 
+                # คำนวณ u สำหรับทุกจุดในกริด
                 u_start = np.zeros_like(r)
                 u_end = np.zeros_like(r)
                 
+                # คำนวณเฉพาะจุดที่ tau_start > 0
                 mask_start = tau_start > 0
-                if mask_start.any():
+                if mask_start.any():  # ตรวจสอบว่ามีจุดที่ต้องคำนวณ
                     u_start[mask_start] = (r[mask_start]**2 * S) / (4 * T * tau_start[mask_start])
                     u_start = np.maximum(u_start, 1e-20)
                 
+                # คำนวณเฉพาะจุดที่ tau_end > 0
                 mask_end = tau_end > 0
-                if mask_end.any():
+                if mask_end.any():  # ตรวจสอบว่ามีจุดที่ต้องคำนวณ
                     u_end[mask_end] = (r[mask_end]**2 * S) / (4 * T * tau_end[mask_end])
                     u_end = np.maximum(u_end, 1e-20)
                 
+                # คำนวณ well function
                 W_u_start = np.zeros_like(u_start)
                 W_u_end = np.zeros_like(u_end)
                 
+                # คำนวณเฉพาะจุดที่ u_start < 100 (ป้องกัน overflow)
                 mask_u_start = u_start < 100
                 if mask_u_start.any():
                     W_u_start[mask_u_start] = exp1(u_start[mask_u_start])
                 
+                # คำนวณเฉพาะจุดที่ u_end < 100 (ป้องกัน overflow)
                 mask_u_end = u_end < 100
                 if mask_u_end.any():
                     W_u_end[mask_u_end] = exp1(u_end[mask_u_end])
                 
+                # คำนวณระยะน้ำลด
                 drawdown_start = np.where(tau_start > 0, (Q / (4 * np.pi * T)) * W_u_start, 0)
                 drawdown_end = np.where(tau_end > 0, (Q / (4 * np.pi * T)) * W_u_end, 0)
                 
+                # รวมผลกระทบจากแต่ละช่วงการสูบน้ำ
                 well_drawdown += (drawdown_start - drawdown_end)
         
         total_drawdown += well_drawdown
     
     return total_drawdown
 
-def create_hourly_plot(hour, wells, grid_resolution, utm_zone, well_pumping_schedules):
-    """สร้างแผนภูมิระยะน้ำลดโดยไม่ใช้ข้อความภาษาไทยในแผนที่"""
-    # ตั้งค่าฟอนต์พื้นฐาน
-    plt.rcParams['font.family'] = 'sans-serif'
-    
+def create_hourly_plot(hour, wells, grid_resolution, show_labels, show_wells, show_well_values, utm_zone, well_pumping_schedules):
+    """สร้างแผนภูมิระยะน้ำลดสำหรับชั่วโมงเฉพาะ"""
     # กำหนด EPSG จาก UTM zone
     utm_epsg = utm_zone_dict[utm_zone]
     
@@ -302,10 +261,10 @@ def create_hourly_plot(hour, wells, grid_resolution, utm_zone, well_pumping_sche
         X, Y = create_grid(wells, 200)
     elif grid_resolution == 'กลาง (100x100)':
         X, Y = create_grid(wells, 100)
-    else:
+    else:  # ต่ำ
         X, Y = create_grid(wells, 50)
     
-    # คำนวณระยะน้ำลด
+    # คำนวณระยะน้ำลด (ใช้เฉพาะบ่อที่เลือก)
     drawdown = calculate_drawdown_at_time(X, Y, wells, hour, well_pumping_schedules, utm_epsg)
     
     # สร้าง interpolator
@@ -318,27 +277,41 @@ def create_hourly_plot(hour, wells, grid_resolution, utm_zone, well_pumping_sche
     min_drawdown = np.nanmin(drawdown) if len(wells) > 0 else 0
     
     if max_drawdown > 0:
+        # สร้างระดับ Contour เป็นจำนวนเต็ม
         max_level = int(np.ceil(max_drawdown))
         
+        # ตรวจสอบว่าค่าสูงสุดเพียงพอสำหรับแสดงเป็นจำนวนเต็มหรือไม่
         if max_level < 1:
+            # ถ้าระยะน้ำลดน้อยกว่า 1 เมตร ให้แสดงทศนิยม 1 ตำแหน่ง
             levels = np.linspace(0, 1, 11)
             fmt = ticker.StrMethodFormatter("{x:.1f}")
             contour_fmt = '%1.1f'
         else:
+            # สร้างระดับ Contour เป็นจำนวนเต็ม
             levels = np.arange(0, max_level + 1, 1)
             fmt = ticker.FuncFormatter(lambda x, pos: f'{int(x)}')
             contour_fmt = '%1.0f'
+        
+        # กำหนดจำนวนระดับสี
+        num_levels = len(levels) - 1
     else:
         levels = 10
         fmt = None
         contour_fmt = '%1.0f'
     
+    # คำนวณวันที่และสถานะในวันนั้น
+    day_number = (hour // 24) + 1
+    hour_in_day = hour % 24
+    
     # สร้าง figure
     fig, ax = plt.subplots(figsize=(14, 12))
     
-    # พล็อต contour
+    # พล็อต contour (ถ้ามีข้อมูล)
     if max_drawdown > 0:
+        # พล็อตพื้นที่สี
         contour = ax.contourf(X, Y, drawdown, levels=levels, cmap='viridis_r', alpha=0.7)
+        
+        # พล็อตเส้น contour
         contour_lines = ax.contour(
             X, Y, drawdown, 
             levels=levels,
@@ -347,6 +320,7 @@ def create_hourly_plot(hour, wells, grid_resolution, utm_zone, well_pumping_sche
             alpha=0.7
         )
         
+        # เพิ่มป้ายกำกับเส้น contour
         ax.clabel(
             contour_lines, 
             inline=True,
@@ -356,20 +330,24 @@ def create_hourly_plot(hour, wells, grid_resolution, utm_zone, well_pumping_sche
         )
         
         cbar = fig.colorbar(contour, ax=ax, shrink=0.8)
-        cbar.set_label('Drawdown (m)', fontsize=12, labelpad=10)
+        cbar.set_label('ระยะน้ำลด (เมตร)', fontsize=12, labelpad=10)
         cbar.ax.invert_yaxis()
         
+        # ตั้งค่าระดับสี
         if fmt is not None:
             cbar.ax.yaxis.set_major_formatter(fmt)
             cbar.ax.tick_params(labelsize=10)
         
+        # หาจุดที่มีระยะน้ำลดสูงสุด
         max_idx = np.unravel_index(np.argmax(drawdown), drawdown.shape)
         max_x, max_y = X[max_idx], Y[max_idx]
         max_value = drawdown[max_idx]
         
+        # พล็อตจุดที่มีระยะน้ำลดสูงสุด
         ax.plot(max_x, max_y, '*', color='gold', markersize=18, 
                 markeredgecolor='red', markeredgewidth=1.5, zorder=20)
         
+        # แสดงค่าระยะน้ำลดสูงสุด
         ax.text(max_x, max_y + 50, 
                 f'Max: {max_value:.2f} m', 
                 fontsize=12, color='white', weight='bold',
@@ -379,41 +357,152 @@ def create_hourly_plot(hour, wells, grid_resolution, utm_zone, well_pumping_sche
     else:
         max_value = 0.0
     
-    # พล็อตบ่อน้ำ
+    # พล็อตบ่อน้ำและหมายเลขบ่อ (แสดงทุกบ่อ)
+    plotted_labels = []
+    # เก็บข้อมูลสำหรับคำอธิบายแผนที่
+    legend_info = {
+        'pumping_well': False,
+        'active_pumping_well': False,
+        'observation_well': False,
+        'max_drawdown_point': False,
+        'pumping_well_value': False,
+        'observation_well_value': False
+    }
+    
     for well in wells:
         well_id, x_well, y_well, Q, T, S, status_val = well
             
         color = 'red' if status_val == 'Pumping' else 'blue'
         marker = 'o' if status_val == 'Pumping' else 's'
         
+        # ตรวจสอบสถานะการสูบน้ำสำหรับบ่อนี้
         pumping_now = False
         if status_val == 'Pumping' and well_id in well_pumping_schedules:
-            hour_in_day = hour % 24
-            for start_hour, end_hour in well_pumping_schedules[well_id]:
+            pumping_schedule = well_pumping_schedules[well_id]
+            for start_hour, end_hour in pumping_schedule:
                 if start_hour <= hour_in_day < end_hour:
                     pumping_now = True
                     break
         
-        if pumping_now:
-            ax.plot(x_well, y_well, marker, color='yellow', markersize=12, 
-                    markeredgecolor='red', markeredgewidth=1.5, zorder=10)
-        else:
-            ax.plot(x_well, y_well, marker, color=color, markersize=10, 
-                    markeredgecolor='white', markeredgewidth=1.5, zorder=10)
+        # พล็อตจุดบ่อน้ำ
+        if show_wells:
+            # เปลี่ยนสีถ้ากำลังสูบน้ำ
+            if pumping_now:
+                ax.plot(x_well, y_well, marker, color='yellow', markersize=12, 
+                        markeredgecolor='red', markeredgewidth=1.5, zorder=10)
+                legend_info['active_pumping_well'] = True
+            else:
+                ax.plot(x_well, y_well, marker, color=color, markersize=10, 
+                        markeredgecolor='white', markeredgewidth=1.5, zorder=10)
+                if status_val == 'Pumping':
+                    legend_info['pumping_well'] = True
+                else:
+                    legend_info['observation_well'] = True
         
-        # แสดง ID บ่อเป็นตัวเลข
-        ax.text(x_well + 20, y_well + 20, str(well_id),
-                fontsize=10, color='white', weight='bold',
-                bbox=dict(boxstyle='round,pad=0.3', facecolor='orange' if pumping_now else color, alpha=0.9),
-                zorder=11)
-        
-        # แสดงค่าระยะน้ำลด
+        # คำนวณค่าระดับน้ำที่บ่อน้ำ
         point = np.array([[y_well, x_well]])
         well_dd = interp(point)[0] if max_drawdown > 0 else 0.0
-        ax.text(x_well, y_well - 30, f'{well_dd:.2f} m',
-                fontsize=9, color='white', weight='bold',
-                bbox=dict(boxstyle='round,pad=0.2', facecolor='purple' if status_val == 'Pumping' else 'green', alpha=0.9),
-                zorder=12)
+        
+        # พล็อตหมายเลขบ่อ (ถ้าเลือกแสดง)
+        if show_labels:
+            offset_x = 20
+            offset_y = 20
+            text_pos = (x_well + offset_x, y_well + offset_y)
+            
+            # ตรวจสอบการทับซ้อน
+            overlap = False
+            for pos in plotted_labels:
+                dist = math.sqrt((text_pos[0] - pos[0])**2 + (text_pos[1] - pos[1])**2)
+                if dist < 60:
+                    overlap = True
+                    break
+            
+            # ปรับตำแหน่งถ้าทับซ้อน
+            if overlap:
+                alternatives = [
+                    (x_well - offset_x - 30, y_well - offset_y),
+                    (x_well + offset_x, y_well - offset_y - 25),
+                    (x_well - offset_x - 40, y_well + offset_y)
+                ]
+                
+                for alt_pos in alternatives:
+                    alt_overlap = False
+                    for pos in plotted_labels:
+                        dist = math.sqrt((alt_pos[0] - pos[0])**2 + (alt_pos[1] - pos[1])**2)
+                        if dist < 60:
+                            alt_overlap = True
+                            break
+                    
+                    if not alt_overlap:
+                        text_pos = alt_pos
+                        break
+            
+            # เพิ่มหมายเลขบ่อ
+            ax.annotate(
+                str(well_id),
+                xy=(x_well, y_well),
+                xytext=text_pos,
+                fontsize=10,
+                color='white',
+                weight='bold',
+                ha='center',
+                va='center',
+                bbox=dict(
+                    boxstyle='round,pad=0.3',
+                    facecolor='orange' if pumping_now else color,
+                    edgecolor='white',
+                    alpha=0.9
+                ),
+                arrowprops=dict(
+                    arrowstyle='-',
+                    color='white',
+                    linewidth=1.2,
+                    alpha=0.8
+                ),
+                zorder=11
+            )
+            plotted_labels.append(text_pos)
+        
+        # แสดงค่าระดับน้ำที่บ่อ (ถ้าเลือกแสดง)
+        if show_well_values:
+            # เลือกตำแหน่งสำหรับแสดงค่าที่ไม่ทับกับป้ายชื่อ
+            value_pos = (x_well, y_well - 30)
+            
+            # ตรวจสอบการทับซ้อน
+            value_overlap = False
+            for pos in plotted_labels:
+                dist = math.sqrt((value_pos[0] - pos[0])**2 + (value_pos[1] - pos[1])**2)
+                if dist < 40:
+                    value_overlap = True
+                    break
+            
+            # ปรับตำแหน่งถ้าทับซ้อน
+            if value_overlap:
+                value_pos = (x_well, y_well + 30)
+            
+            # แสดงค่าระยะน้ำลด
+            ax.text(
+                value_pos[0], value_pos[1],
+                f'{well_dd:.2f} m',
+                fontsize=9,
+                color='white',
+                weight='bold',
+                ha='center',
+                va='center',
+                bbox=dict(
+                    boxstyle='round,pad=0.2',
+                    facecolor='purple' if status_val == 'Pumping' else 'green',
+                    edgecolor='white',
+                    alpha=0.9
+                ),
+                zorder=12
+            )
+            plotted_labels.append(value_pos)
+            
+            if status_val == 'Pumping':
+                legend_info['pumping_well_value'] = True
+            else:
+                legend_info['observation_well_value'] = True
     
     # กำหนดขอบเขต
     if len(wells) > 0:
@@ -427,7 +516,7 @@ def create_hourly_plot(hour, wells, grid_resolution, utm_zone, well_pumping_sche
         ax.set_xlim(0, 1000)
         ax.set_ylim(0, 1000)
     
-    # ตั้งค่าแกนพิกัด
+    # ตั้งค่าแกนพิกัดให้แสดงเป็นจำนวนเต็ม
     ax.xaxis.set_major_formatter(ticker.FormatStrFormatter('%d'))
     ax.yaxis.set_major_formatter(ticker.FormatStrFormatter('%d'))
     
@@ -439,8 +528,9 @@ def create_hourly_plot(hour, wells, grid_resolution, utm_zone, well_pumping_sche
             source=ctx.providers.Esri.WorldImagery,
             alpha=0.8
         )
-    except Exception as e:
-        st.warning(f"ไม่สามารถโหลดแผนที่ฐานได้: {str(e)}")
+    except:
+        # หากไม่สามารถโหลดแผนที่ฐานได้
+        pass
     
     # เพิ่ม scale bar
     scalebar = ScaleBar(
@@ -455,59 +545,48 @@ def create_hourly_plot(hour, wells, grid_resolution, utm_zone, well_pumping_sche
     )
     ax.add_artist(scalebar)
     
-    # ตั้งค่าชื่อแผนที่ - ใช้ภาษาอังกฤษเพื่อหลีกเลี่ยงปัญหา
-    day_number = (hour // 24) + 1
-    title = f'Drawdown at Hour {hour} (Day {day_number})\n'
-    title += f'Max Drawdown: {max_value:.2f} m | Min Drawdown: {min_drawdown:.2f} m\n'
+    # ปรับแต่งกราฟ
+    title = f'การเปลี่ยนแปลงระยะน้ำลดที่ชั่วโมง {hour} (วันที่ {day_number})\n'
+    title += f'ระยะน้ำลดสูงสุด: {max_value:.2f} เมตร | ระยะน้ำลดต่ำสุด: {min_drawdown:.2f} เมตร\n'
     title += f'UTM Zone: {utm_zone} (EPSG: {utm_epsg})'
     
     ax.set_title(title, fontsize=14, pad=20)
-    ax.set_xlabel('Easting [m]', fontsize=12, labelpad=10)
-    ax.set_ylabel('Northing [m]', fontsize=12, labelpad=10)
+    ax.set_xlabel('Easting [เมตร]', fontsize=12, labelpad=10)
+    ax.set_ylabel('Northing [เมตร]', fontsize=12, labelpad=10)
     ax.grid(alpha=0.3, linestyle='--', color='white')
     ax.set_aspect('equal')
     
-    # เพิ่มคำอธิบายสัญลักษณ์ (ภาษาอังกฤษ)
-    legend_patches = [
-        mpatches.Patch(color='red', label='Pumping Well (Off)'),
-        mpatches.Patch(color='yellow', label='Pumping Well (On)'),
-        mpatches.Patch(color='blue', label='Observation Well'),
-        plt.Line2D([0], [0], marker='*', color='w', markerfacecolor='gold', 
-                  markersize=15, markeredgecolor='red', label='Max Drawdown Point'),
-        mpatches.Patch(color='purple', label='Drawdown at Pumping Well'),
-        mpatches.Patch(color='green', label='Drawdown at Observation Well')
-    ]
+    # เพิ่มข้อมูลจุดสูงสุดใน legend
+    if max_drawdown > 0:
+        legend_info['max_drawdown_point'] = True
     
-    ax.legend(
-        handles=legend_patches, 
-        loc='upper right', 
-        fontsize=10,
-        framealpha=0.9
-    )
-    
-    return fig, max_value, min_drawdown
+    return fig, legend_info
 
 def time_to_hours(t):
     """แปลงเวลาเป็นชั่วโมง (float)"""
     return t.hour + t.minute / 60
 
 def get_pumping_schedules(pumping_controls):
+    """ดึงตารางเวลาการสูบน้ำจาก session_state"""
     schedules = {}
     for well_id, controls in pumping_controls.items():
         periods = []
         
+        # เช้า
         if controls['morning_active'] and controls['morning_start'] <= controls['morning_end']:
             periods.append((
                 time_to_hours(controls['morning_start']), 
                 time_to_hours(controls['morning_end'])
             ))
         
+        # บ่าย
         if controls['afternoon_active'] and controls['afternoon_start'] <= controls['afternoon_end']:
             periods.append((
                 time_to_hours(controls['afternoon_start']), 
                 time_to_hours(controls['afternoon_end'])
             ))
         
+        # เย็น
         if controls['evening_active'] and controls['evening_start'] <= controls['evening_end']:
             periods.append((
                 time_to_hours(controls['evening_start']), 
@@ -528,25 +607,19 @@ def main():
     
     st.title("💧 การจำลองระยะน้ำลดในชั้นน้ำบาดาล")
     st.markdown("""
-    แอปพลิเคชันนี้ใช้สำหรับจำลองระยะน้ำลดในชั้นน้ำบาดาลโดยอาศัยหลักการของ Theis equation 
-    และการซ้อนทับ (superposition) สำหรับบ่อสูบน้ำหลายบ่อ
-    """)
-    
-    # ติดตั้งฟอนต์ภาษาไทย
-    if 'thai_font' not in st.session_state:
-        thai_font = install_thai_font()
-        st.session_state['thai_font'] = thai_font
-    
-    # แสดงข้อมูลฟอนต์ที่ใช้งาน
-    thai_font = st.session_state.get('thai_font', 'Tahoma')
-    st.sidebar.markdown(f"**ฟอนต์ที่ใช้งาน:** {thai_font}")
-    
-    # ทดสอบแสดงข้อความภาษาไทยใน Streamlit
-    if st.sidebar.checkbox("ทดสอบแสดงภาษาไทยใน Streamlit"):
-        st.subheader("ทดสอบการแสดงผลภาษาไทย")
-        st.write("นี่คือข้อความภาษาไทยทดสอบ: สวัสดีประเทศไทย")
-        st.write("กระทรวงทรัพยากรธรรมชาติและสิ่งแวดล้อม")
-        st.write("กรมทรัพยากรน้ำบาดาล")
+    <div style="background-color:#e8f4f8; padding:20px; border-radius:10px; border-left:5px solid #1f618d;">
+        <h3 style="color:#1f618d;">คำอธิบายแอปพลิเคชัน</h3>
+        <p>แอปพลิเคชันนี้ใช้สำหรับจำลองระยะน้ำลดในชั้นน้ำบาดาลโดยอาศัยหลักการของ Theis equation 
+        และการซ้อนทับ (superposition) สำหรับบ่อสูบน้ำหลายบ่อ โดยมีคุณสมบัติหลักดังนี้:</p>
+        <ul>
+            <li>รองรับการนำเข้าข้อมูลบ่อน้ำจากไฟล์ Excel หรือ CSV</li>
+            <li>คำนวณระยะน้ำลดแบบไดนามิกตามเวลาการสูบน้ำ</li>
+            <li>แสดงผลเป็นแผนที่แสดงการกระจายตัวของระยะน้ำลด</li>
+            <li>รองรับการตั้งค่าตารางเวลาการสูบน้ำสำหรับแต่ละบ่อ</li>
+            <li>แสดงผลลัพธ์แบบเรียลไทม์ตามเวลาที่เลือก</li>
+        </ul>
+    </div>
+    """, unsafe_allow_html=True)
     
     # กำหนด session state
     if 'wells' not in st.session_state:
@@ -569,46 +642,55 @@ def main():
     
     # แสดงข้อมูลบ่อน้ำ (ถ้ามี)
     if st.session_state.wells:
-        st.subheader("ข้อมูลบ่อน้ำ")
+        st.subheader("📝 ข้อมูลบ่อน้ำ")
         well_df = pd.DataFrame(st.session_state.wells, 
-                              columns=['Well_ID', 'Easting', 'Northing', 'Q', 'T', 'S', 'Status'])
+                              columns=['รหัสบ่อ', 'พิกัดตะวันออก (Easting)', 'พิกัดเหนือ (Northing)', 
+                                       'อัตราการสูบ (Q)', 'ค่าการนำน้ำ (T)', 'ค่ากักเก็บ (S)', 'สถานะ'])
         st.dataframe(well_df)
     
     # ส่วนควบคุมหลัก
     col1, col2 = st.columns([1, 1])
     
     with col1:
+        st.subheader("⚙️ ตั้งค่าการจำลอง")
+        
         # ส่วนเลือก UTM Zone
         utm_zone = st.selectbox(
-            "UTM Zone:",
+            "โซน UTM:",
             options=list(utm_zone_dict.keys()),
-            index=1
+            index=1,  # Default to 48N
+            help="เลือกโซน UTM ที่ตรงกับพื้นที่ของคุณ"
         )
         
         # ส่วนเลือกความละเอียดกริด
         grid_resolution = st.selectbox(
-            "ความละเอียดกริด:",
+            "ความละเอียดกริดคำนวณ:",
             options=['ต่ำ (50x50)', 'กลาง (100x100)', 'สูง (200x200)'],
-            index=1
+            index=1,
+            help="ความละเอียดสูงจะให้ผลแม่นยำกว่าแต่ใช้เวลาคำนวณนานกว่า"
         )
         
         # ส่วนเลือกชั่วโมงการจำลอง
         hour = st.slider(
-            "ชั่วโมงการจำลอง:",
+            "ชั่วโมงการจำลอง (ชม.):",
             min_value=0,
             max_value=MAX_HOURS,
             value=0,
-            step=1
+            step=1,
+            help=f"จำลองการทำงานสูงสุด {DAYS_TO_SIMULATE} วัน (168 ชั่วโมง)"
         )
         
         # คำนวณวันที่และชั่วโมง
         day_number = (hour // 24) + 1
         hour_in_day = hour % 24
         
-        # แสดงสถานะการสูบน้ำ (ภาษาไทย)
-        status_html = f"<div style='background-color:#e8f4f8; padding:10px; border-radius:5px; border-left:5px solid #1f618d;'>"
-        status_html += f"<b>วันที่ {day_number} | ชั่วโมง: {hour_in_day:.1f}</b><br>"
+        # แสดงสถานะการสูบน้ำ
+        status_html = f"""
+        <div style='background-color:#e8f4f8; padding:15px; border-radius:10px; border-left:5px solid #1f618d; margin-top:20px;'>
+            <h4 style='color:#1f618d; margin-top:0;'>สถานะการทำงาน วันที่ {day_number} | ชั่วโมง: {hour_in_day:.1f}</h4>
+        """
         
+        # ตรวจสอบสถานะการสูบน้ำ
         pumping_wells = []
         inactive_wells = []
         
@@ -620,24 +702,29 @@ def main():
             if well_id in st.session_state.pumping_controls:
                 controls = st.session_state.pumping_controls[well_id]
                 
+                # ตรวจสอบว่าบ่อเปิดใช้งานหรือไม่
                 if not controls['active']:
                     inactive_wells.append(well_id)
                     continue
                 
+                # ตรวจสอบสถานะการสูบน้ำ
                 is_pumping = False
                 
+                # เช้า
                 if controls['morning_active']:
                     start = time_to_hours(controls['morning_start'])
                     end = time_to_hours(controls['morning_end'])
                     if start <= hour_in_day < end:
                         is_pumping = True
                 
+                # บ่าย
                 if controls['afternoon_active']:
                     start = time_to_hours(controls['afternoon_start'])
                     end = time_to_hours(controls['afternoon_end'])
                     if start <= hour_in_day < end:
                         is_pumping = True
                 
+                # เย็น
                 if controls['evening_active']:
                     start = time_to_hours(controls['evening_start'])
                     end = time_to_hours(controls['evening_end'])
@@ -648,16 +735,22 @@ def main():
                     pumping_wells.append(well_id)
         
         if pumping_wells:
-            status_html += f"<span style='color:#27ae60; font-weight:bold;'>● กำลังสูบน้ำในบ่อ: {', '.join(pumping_wells)}</span><br>"
+            status_html += f"<p style='color:#27ae60; font-weight:bold;'>● กำลังสูบน้ำในบ่อ: {', '.join(pumping_wells)}</p>"
         else:
-            status_html += f"<span style='color:#7f8c8d;'>● ไม่มีบ่อสูบน้ำที่ทำงาน</span><br>"
+            status_html += f"<p style='color:#7f8c8d;'>● ไม่มีบ่อสูบน้ำที่ทำงาน</p>"
         
         if inactive_wells:
-            status_html += f"<span style='color:#e67e22;'>● บ่อที่ปิดการใช้งาน: {', '.join(inactive_wells)}</span>"
+            status_html += f"<p style='color:#e67e22;'>● บ่อที่ปิดการใช้งาน: {', '.join(inactive_wells)}</p>"
         
         status_html += "</div>"
         
         st.markdown(status_html, unsafe_allow_html=True)
+        
+        # ส่วนเลือกการแสดงผล
+        st.subheader("👁️ การแสดงผล")
+        show_labels = st.checkbox("แสดงหมายเลขบ่อ", value=True)
+        show_wells = st.checkbox("แสดงตำแหน่งบ่อ", value=True)
+        show_well_values = st.checkbox("แสดงค่าระยะน้ำลดที่บ่อ", value=True)
         
         # ปุ่มอัปเดต
         if st.button("อัปเดตการจำลอง", type="primary", use_container_width=True):
@@ -666,13 +759,13 @@ def main():
     with col2:
         # ส่วนตั้งค่าการสูบน้ำสำหรับแต่ละบ่อ
         if st.session_state.wells:
-            st.subheader("ตั้งค่าการสูบน้ำสำหรับแต่ละบ่อ")
+            st.subheader("⏲️ ตั้งค่าการสูบน้ำสำหรับแต่ละบ่อ")
             
             # กรองเฉพาะบ่อสูบน้ำ
             pumping_wells = [well for well in st.session_state.wells if well[6] == 'Pumping']
             
             if not pumping_wells:
-                st.warning("ไม่พบบ่อสูบน้ำในข้อมูล")
+                st.warning("⚠️ ไม่พบบ่อสูบน้ำในข้อมูล")
             else:
                 # สร้างแท็บสำหรับแต่ละบ่อ
                 tabs = st.tabs([f"บ่อ {well[0]}" for well in pumping_wells])
@@ -683,37 +776,40 @@ def main():
                     with tabs[i]:
                         # ตรวจสอบว่ามีข้อมูลควบคุมหรือไม่
                         if well_id not in st.session_state.pumping_controls:
+                            # ค่าเริ่มต้น
                             st.session_state.pumping_controls[well_id] = {
                                 'active': True,
                                 'morning_active': True,
-                                'morning_start': datetime_time(8, 0),
-                                'morning_end': datetime_time(12, 0),
+                                'morning_start': time(8, 0),
+                                'morning_end': time(12, 0),
                                 'afternoon_active': True,
-                                'afternoon_start': datetime_time(12, 0),
-                                'afternoon_end': datetime_time(18, 0),
+                                'afternoon_start': time(12, 0),
+                                'afternoon_end': time(18, 0),
                                 'evening_active': True,
-                                'evening_start': datetime_time(18, 0),
-                                'evening_end': datetime_time(23, 59),
+                                'evening_start': time(18, 0),
+                                'evening_end': time(23, 59),
                             }
                         
                         controls = st.session_state.pumping_controls[well_id]
                         
-                        # แสดงข้อมูลบ่อ (ภาษาไทย)
+                        # แสดงข้อมูลบ่อ
                         st.markdown(f"""
-                        **ข้อมูลบ่อ {well_id}**
+                        **📌 ข้อมูลบ่อ {well_id}**
                         - ตำแหน่ง: ({x:.2f}, {y:.2f})
                         - อัตราการสูบ (Q): {Q:.2f} m³/day
                         - ค่าการนำน้ำ (T): {T:.4f} m²/day
                         - ค่าความสามารถในการกักเก็บ (S): {S:.6f}
                         """)
                         
+                        # ตั้งค่าทั่วไป
                         controls['active'] = st.checkbox(
                             "เปิดใช้งานบ่อนี้", 
                             value=controls['active'],
                             key=f"active_{well_id}"
                         )
                         
-                        st.markdown("**ช่วงเช้า (00:00-12:00 น.)**")
+                        # ช่วงเช้า
+                        st.markdown("**🌅 ช่วงเช้า (00:00-12:00 น.)**")
                         col_m1, col_m2 = st.columns(2)
                         with col_m1:
                             controls['morning_active'] = st.checkbox(
@@ -736,7 +832,8 @@ def main():
                                 label_visibility="collapsed"
                             )
                         
-                        st.markdown("**ช่วงบ่าย (12:00-18:00 น.)**")
+                        # ช่วงบ่าย
+                        st.markdown("**☀️ ช่วงบ่าย (12:00-18:00 น.)**")
                         col_a1, col_a2 = st.columns(2)
                         with col_a1:
                             controls['afternoon_active'] = st.checkbox(
@@ -759,7 +856,8 @@ def main():
                                 label_visibility="collapsed"
                             )
                         
-                        st.markdown("**ช่วงเย็น (18:00-24:00 น.)**")
+                        # ช่วงเย็น
+                        st.markdown("**🌙 ช่วงเย็น (18:00-24:00 น.)**")
                         col_e1, col_e2 = st.columns(2)
                         with col_e1:
                             controls['evening_active'] = st.checkbox(
@@ -782,99 +880,117 @@ def main():
                                 label_visibility="collapsed"
                             )
     
-    # สร้างแผนที่และแสดงคำอธิบายภาษาไทยใน Streamlit
+    # สร้างแผนที่
     if st.session_state.wells:
-        st.subheader("ผลลัพธ์การจำลอง")
+        st.subheader("🗺️ ผลลัพธ์การจำลอง")
         
         # ดึงตารางเวลาการสูบน้ำ
         pumping_schedules = get_pumping_schedules(st.session_state.pumping_controls)
         
         # สร้างแผนที่
-        with st.spinner('กำลังคำนวณและสร้างแผนที่...'):
-            start_time = time.time()
-            fig, max_value, min_drawdown = create_hourly_plot(
-                hour,
-                st.session_state.wells,
-                grid_resolution,
-                utm_zone,
-                pumping_schedules
-            )
-            st.pyplot(fig)
-            elapsed = time.time() - start_time
+        fig, legend_info = create_hourly_plot(
+            hour,
+            st.session_state.wells,
+            grid_resolution,
+            show_labels,
+            show_wells,
+            show_well_values,
+            utm_zone,
+            pumping_schedules
+        )
+        
+        st.pyplot(fig)
+        
+        # แสดงคำอธิบายแผนที่
+        st.subheader("📚 คำอธิบายสัญลักษณ์ในแผนที่")
+        
+        if any(legend_info.values()):
+            col1, col2 = st.columns(2)
             
-            # แสดงผลภาษาไทยใน Streamlit
-            day_number = (hour // 24) + 1
-            st.success(f"คำนวณเสร็จสิ้นใน {elapsed:.2f} วินาที")
-            st.subheader(f"สรุปผลการจำลอง ณ ชั่วโมง {hour} (วันที่ {day_number})")
-            st.markdown(f"""
-            **ผลการจำลอง:**
-            - ระยะน้ำลดสูงสุด: **{max_value:.2f} เมตร**
-            - ระยะน้ำลดต่ำสุด: **{min_drawdown:.2f} เมตร**
-            - โซน UTM: **{utm_zone}** (EPSG: {utm_zone_dict[utm_zone]})
-            """)
+            with col1:
+                st.markdown("### 🚰 สัญลักษณ์บ่อน้ำ")
+                
+                if legend_info['pumping_well']:
+                    st.markdown("""
+                    <div style="display: flex; align-items: center; margin-bottom: 15px;">
+                        <div style="width: 25px; height: 25px; border-radius: 50%; background-color: red; 
+                                    border: 2px solid white; margin-right: 15px; display: flex; 
+                                    justify-content: center; align-items: center;"></div>
+                        <div style="font-size: 16px;">บ่อสูบน้ำ (หยุดสูบ)</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                
+                if legend_info['active_pumping_well']:
+                    st.markdown("""
+                    <div style="display: flex; align-items: center; margin-bottom: 15px;">
+                        <div style="width: 25px; height: 25px; border-radius: 50%; background-color: yellow; 
+                                    border: 2px solid red; margin-right: 15px; display: flex; 
+                                    justify-content: center; align-items: center;"></div>
+                        <div style="font-size: 16px;">บ่อสูบน้ำ (กำลังสูบ)</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                
+                if legend_info['observation_well']:
+                    st.markdown("""
+                    <div style="display: flex; align-items: center; margin-bottom: 15px;">
+                        <div style="width: 25px; height: 25px; background-color: blue; 
+                                    border: 2px solid white; margin-right: 15px; display: flex; 
+                                    justify-content: center; align-items: center;"></div>
+                        <div style="font-size: 16px;">บ่อสังเกตการณ์</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                
+                if legend_info['max_drawdown_point']:
+                    st.markdown("""
+                    <div style="display: flex; align-items: center; margin-bottom: 15px;">
+                        <div style="font-size: 30px; color: gold; margin-right: 15px;">★</div>
+                        <div style="font-size: 16px;">จุดที่มีระยะน้ำลดสูงสุด</div>
+                    </div>
+                    """, unsafe_allow_html=True)
             
-            # คำอธิบายสัญลักษณ์ภาษาไทย
-            st.subheader("คำอธิบายสัญลักษณ์ในแผนที่")
-            st.markdown("""
-            <style>
-            .legend-box {
-                border: 1px solid #ddd;
-                border-radius: 5px;
-                padding: 15px;
-                margin-bottom: 20px;
-                background-color: #f9f9f9;
-            }
-            .legend-item {
-                display: flex;
-                align-items: center;
-                margin-bottom: 8px;
-            }
-            .color-box {
-                width: 20px;
-                height: 20px;
-                margin-right: 10px;
-                border: 1px solid #555;
-            }
-            </style>
+            with col2:
+                st.markdown("### 📊 สัญลักษณ์ค่าข้อมูล")
+                
+                if legend_info['pumping_well_value']:
+                    st.markdown("""
+                    <div style="display: flex; align-items: center; margin-bottom: 15px;">
+                        <div style="background-color: purple; color: white; padding: 5px 12px; 
+                                    border-radius: 5px; margin-right: 15px; font-weight: bold;">0.00 m</div>
+                        <div style="font-size: 16px;">ค่าระยะน้ำลดที่บ่อสูบ</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                
+                if legend_info['observation_well_value']:
+                    st.markdown("""
+                    <div style="display: flex; align-items: center; margin-bottom: 15px;">
+                        <div style="background-color: green; color: white; padding: 5px 12px; 
+                                    border-radius: 5px; margin-right: 15px; font-weight: bold;">0.00 m</div>
+                        <div style="font-size: 16px;">ค่าระยะน้ำลดที่บ่อสังเกตการณ์</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                
+                st.markdown("""
+                <div style="margin-top: 20px; background-color: #f8f9fa; padding: 15px; border-radius: 8px;">
+                    <h4>การตีความแผนที่</h4>
+                    <ul>
+                        <li>พื้นที่สีเขียวเข้ม: ระยะน้ำลดน้อย</li>
+                        <li>พื้นที่สีเหลือง: ระยะน้ำลดปานกลาง</li>
+                        <li>พื้นที่สีม่วง: ระยะน้ำลดมาก</li>
+                        <li>เส้นขอบสีขาว: เส้นระดับน้ำลดเท่ากัน (contour)</li>
+                    </ul>
+                </div>
+                """, unsafe_allow_html=True)
+        else:
+            st.info("ℹ️ ไม่พบสัญลักษณ์ในแผนที่ โปรดเปิดใช้งานการแสดงผลในส่วนการตั้งค่า")
             
-            <div class="legend-box">
-                <div class="legend-item">
-                    <div class="color-box" style="background-color: red;"></div>
-                    <div>บ่อสูบน้ำ (หยุดทำงาน)</div>
-                </div>
-                <div class="legend-item">
-                    <div class="color-box" style="background-color: yellow;"></div>
-                    <div>บ่อสูบน้ำ (กำลังทำงาน)</div>
-                </div>
-                <div class="legend-item">
-                    <div class="color-box" style="background-color: blue;"></div>
-                    <div>บ่อสังเกตการณ์</div>
-                </div>
-                <div class="legend-item">
-                    <div class="color-box" style="background-color: purple;"></div>
-                    <div>ค่าระยะน้ำลดที่บ่อสูบน้ำ</div>
-                </div>
-                <div class="legend-item">
-                    <div class="color-box" style="background-color: green;"></div>
-                    <div>ค่าระยะน้ำลดที่บ่อสังเกตการณ์</div>
-                </div>
-                <div class="legend-item">
-                    <div style="font-size: 24px; color: gold; text-shadow: 0 0 2px red;">★</div>
-                    <div style="margin-left: 10px;">ตำแหน่งที่มีระยะน้ำลดสูงสุด</div>
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
-            
-            # ปุ่มดาวน์โหลดภาพ
-            buf = BytesIO()
-            fig.savefig(buf, format="png", dpi=300, bbox_inches='tight')
-            st.download_button(
-                label="ดาวน์โหลดแผนที่",
-                data=buf,
-                file_name=f"groundwater_simulation_hour_{hour}.png",
-                mime="image/png",
-                use_container_width=True
-            )
+    # ส่วนท้าย
+    st.markdown("---")
+    st.markdown("""
+    <div style="text-align: center; padding: 20px; background-color: #f0f2f6; border-radius: 10px;">
+        <p>พัฒนาโดยทีมงานวิศวกรรมน้ำบาดาล | © 2023 สงวนลิขสิทธิ์</p>
+        <p>ติดต่อ: groundwater.team@example.com | โทร: 02-XXX-XXXX</p>
+    </div>
+    """, unsafe_allow_html=True)
 
 if __name__ == "__main__":
     main()
